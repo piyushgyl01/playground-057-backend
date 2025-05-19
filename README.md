@@ -13,6 +13,7 @@ A full-stack application that uses AI to match users with relevant job opportuni
 ## Tech Stack
 
 ### Frontend
+
 - **React**: Built with React 19 for a modern, responsive UI
 - **Vite**: Fast build tooling for improved development experience
 - **Bootstrap**: Styling and UI components with Bootstrap 5
@@ -20,6 +21,7 @@ A full-stack application that uses AI to match users with relevant job opportuni
 - **Axios**: HTTP client for API communication
 
 ### Backend
+
 - **Node.js**: JavaScript runtime environment
 - **Express**: Web application framework for Node.js
 - **MongoDB**: NoSQL database for storing user and job data
@@ -30,6 +32,7 @@ A full-stack application that uses AI to match users with relevant job opportuni
 ## Setup Instructions
 
 ### Prerequisites
+
 - Node.js (v14 or higher)
 - MongoDB (local or Atlas)
 - Cohere API key (free tier available)
@@ -37,18 +40,21 @@ A full-stack application that uses AI to match users with relevant job opportuni
 ### Backend Setup
 
 1. Clone the repository
+
    ```bash
    git clone https://github.com/yourusername/job-match-platform.git
    cd job-match-platform
    ```
 
 2. Install backend dependencies
+
    ```bash
    cd server
    npm install
    ```
 
 3. Create a `.env` file in the server directory with the following variables:
+
    ```
    PORT=3002
    MONGODB_URI=mongodb://localhost:27017/job-match-platform
@@ -66,17 +72,20 @@ A full-stack application that uses AI to match users with relevant job opportuni
 1. Open a new terminal window/tab
 
 2. Install frontend dependencies
+
    ```bash
    cd client
    npm install
    ```
 
 3. Create a `.env` file in the client directory with the following variables:
+
    ```
    VITE_API_URL=http://localhost:3002/api
    ```
 
 4. Start the frontend development server
+
    ```bash
    npm run dev
    ```
@@ -86,6 +95,7 @@ A full-stack application that uses AI to match users with relevant job opportuni
 ### Seeding Jobs Data
 
 To seed the database with sample job listings, make a POST request to:
+
 ```
 POST http://localhost:3002/api/jobs/seed
 ```
@@ -97,11 +107,13 @@ You can do this using Postman or any API testing tool, or by visiting the jobs p
 ### Authentication Endpoints
 
 - **Register User**
+
   - `POST /api/auth/register`
   - Body: `{ email, password }`
   - Response: JWT token
 
 - **Login User**
+
   - `POST /api/auth/login`
   - Body: `{ email, password }`
   - Response: JWT token
@@ -114,11 +126,13 @@ You can do this using Postman or any API testing tool, or by visiting the jobs p
 ### Profile Endpoints
 
 - **Get Current User Profile**
+
   - `GET /api/profile/me`
   - Headers: `x-auth-token: token`
   - Response: User profile data
 
 - **Create or Update Profile**
+
   - `POST /api/profile`
   - Headers: `x-auth-token: token`
   - Body: `{ name, location, yearsOfExperience, skills, preferredJobType }`
@@ -132,26 +146,31 @@ You can do this using Postman or any API testing tool, or by visiting the jobs p
 ### Job Endpoints
 
 - **Get All Jobs**
+
   - `GET /api/jobs`
   - Response: Array of job listings
 
 - **Get Job by ID**
+
   - `GET /api/jobs/:id`
   - Response: Job details
 
 - **Create Job**
+
   - `POST /api/jobs`
   - Headers: `x-auth-token: token`
   - Body: `{ title, company, location, description, skills, jobType, salary }`
   - Response: Job data
 
 - **Update Job**
+
   - `PUT /api/jobs/:id`
   - Headers: `x-auth-token: token`
   - Body: `{ title, company, location, description, skills, jobType, salary }`
   - Response: Updated job data
 
 - **Delete Job**
+
   - `DELETE /api/jobs/:id`
   - Headers: `x-auth-token: token`
   - Response: Success message
@@ -172,18 +191,21 @@ You can do this using Postman or any API testing tool, or by visiting the jobs p
 The job recommendation system uses the Cohere API to analyze the user's profile and match it with available job listings. Here's how it works:
 
 1. **Data Collection**: When a user clicks "Find My Matches", the system collects:
+
    - User profile data (skills, experience, location, job preferences)
    - Available job listings
 
 2. **AI Prompt Construction**: The system constructs a prompt for the AI that includes:
+
    - A clear task description for the AI
    - Structured user profile data
-   - Structured job listings data 
+   - Structured job listings data
    - A specific request for the output format (JSON with job IDs, match scores, and match reasons)
 
 3. **Cohere API Call**: The backend sends this prompt to the Cohere API using the 'command' model, which is a powerful text generation model that can understand and follow complex instructions.
 
 4. **Response Processing**: The AI returns a text response with job recommendations, which is then:
+
    - Parsed to extract the JSON format with matched jobs
    - Enriched with the full job details from the database
    - Returned to the frontend for display
@@ -193,6 +215,7 @@ The job recommendation system uses the Cohere API to analyze the user's profile 
 ### Prompt Design
 
 The prompt is designed to:
+
 - Give the AI a clear role and task
 - Provide structured data in a way the AI can analyze
 - Request specific output format for easy parsing
@@ -205,7 +228,7 @@ Candidate Profile:
 - Name: ${profile.name}
 - Location: ${profile.location}
 - Years of Experience: ${profile.yearsOfExperience}
-- Skills: ${profile.skills.join(', ')}
+- Skills: ${profile.skills.join(", ")}
 - Preferred Job Type: ${profile.preferredJobType}
 
 Available Jobs:
@@ -241,20 +264,20 @@ The API call includes parameters to control the generation:
 
 ```javascript
 const response = await axios.post(
-  'https://api.cohere.ai/v1/generate',
+  "https://api.cohere.ai/v1/generate",
   {
-    model: 'command',
+    model: "command",
     prompt: prompt,
     max_tokens: 1024,
     temperature: 0.3,
     stop_sequences: [],
-    return_likelihoods: 'NONE'
+    return_likelihoods: "NONE",
   },
   {
     headers: {
-      'Authorization': `Bearer ${process.env.COHERE_API_KEY}`,
-      'Content-Type': 'application/json'
-    }
+      Authorization: `Bearer ${process.env.COHERE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
   }
 );
 ```
@@ -319,6 +342,7 @@ The application follows a standard architecture for a full-stack MERN (MongoDB, 
 2. **Job Data**: The application uses a seeded dataset of jobs. In a real-world scenario, this would be connected to a job board API or have an admin interface for job management.
 
 3. **AI Integration**: The system uses a simple but effective prompt to get job recommendations. More advanced implementations could include:
+
    - Fine-tuned models for job matching
    - More sophisticated scoring algorithms
    - Learning from user feedback on recommendations
