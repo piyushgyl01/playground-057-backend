@@ -1,4 +1,4 @@
-// controllers/recommendationController.js - Job recommendation controller using Hugging Face
+// controllers/recommendationController-cohere.js - Alternative implementation using Cohere
 const axios = require('axios');
 const Profile = require('../models/Profile');
 const Job = require('../models/Job');
@@ -22,189 +22,106 @@ exports.getJobRecommendations = async (req, res) => {
     
     // Format jobs data for AI input
     const jobsData = jobs.map(job => ({
-      id: job._id,
+      id: job._id.toString(),
       title: job.title,
       company: job.company,
       location: job.location,
-      description: job.description,
+      description: job.description.substring(0, 100),  // Truncate description
       skills: job.skills,
-      jobType: job.jobType,
-      salary: job.salary
+      jobType: job.jobType
     }));
-    
-    // Create AI prompt
-    const prompt = `
-    You are an AI job matcher. Your task is to find the top 3 job matches for a candidate based on their profile and available job listings.
-    
-    Candidate Profile:
-    - Name: ${profile.name}
-    - Location: ${profile.location}
-    - Years of Experience: ${profile.yearsOfExperience}
-    - Skills: ${profile.skills.join(', ')}
-    - Preferred Job Type: ${profile.preferredJobType}
-    
-    Available Jobs:
-    ${JSON.stringify(jobsData, null, 2)}
-    
-    Please analyze the candidate's profile and the available jobs, then return the top 3 job matches with the following format:
-    [
-      {
-        "id": "job_id",
-        "title": "job_title",
-        "company": "company_name",
-        "matchScore": 85,
-        "matchReasons": ["reason1", "reason2", "reason3"]
-      },
-      ...
-    ]
-    
-    The matchScore should be between 0-100 and represent how well the candidate matches the job requirements.
-    The matchReasons should include 2-3 specific reasons why this job is a good match for the candidate.
-    `;
-    
-    // Call Hugging Face Inference API
-    // Using a free text generation model (e.g., google/flan-t5-base)
-    const response = await axios.post(
-      'https://api-inference.huggingface.co/models/google/flan-t5-large',
-      {
-        inputs: prompt,
-        parameters: {
-          max_length: 1024,
-          temperature: 0.7,
-          top_p: 0.9,
-          do_sample: true
-        }
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    // Parse AI response
-    const recommendationsText = response.data[0].generated_text;
-    
-    // Extract JSON from the response
+
     try {
-      // First attempt to find a valid JSON array in the response
-      const recommendationsMatch = recommendationsText.match(/\[[\s\S]*\]/);
-      let recommendations;
-      
-      if (recommendationsMatch) {
-        // Try to parse the matched JSON array
-        recommendations = JSON.parse(recommendationsMatch[0]);
-      } else {
-        // If no JSON array is found, use a fallback matching method
-        // Sometimes the model returns non-perfectly formatted JSON
-        // Extract job IDs from the response
-        const jobIdsMatch = recommendationsText.match(/"id"\s*:\s*"([^"]+)"/g);
-        const matchedIds = jobIdsMatch 
-          ? jobIdsMatch.map(match => match.match(/"id"\s*:\s*"([^"]+)"/)[1])
-          : [];
-          
-        // Use the extracted IDs to create recommendations
-        recommendations = matchedIds.slice(0, 3).map((id, index) => {
-          const job = jobsData.find(j => j.id === id) || jobsData[index];
-          return {
-            id: job.id,
-            title: job.title,
-            company: job.company,
-            matchScore: 95 - (index * 5), // Simple scoring based on order
-            matchReasons: [
-              `Skill match with candidate's profile`,
-              `Job type (${job.jobType}) aligns with preference`,
-              `Relevant to candidate's experience level`
-            ]
-          };
-        });
-        
-        // If no IDs were matched, fall back to basic filtering
-        if (recommendations.length === 0) {
-          // Fallback: find jobs with matching skills
-          const skillMatchJobs = jobsData
-            .map(job => {
-              const matchingSkills = job.skills.filter(skill => 
-                profile.skills.includes(skill)
-              );
-              return {
-                ...job,
-                matchingSkillsCount: matchingSkills.length,
-                matchingSkills
-              };
-            })
-            .sort((a, b) => b.matchingSkillsCount - a.matchingSkillsCount)
-            .slice(0, 3);
-            
-          recommendations = skillMatchJobs.map((job, index) => ({
-            id: job.id,
-            title: job.title,
-            company: job.company,
-            matchScore: 85 - (index * 5),
-            matchReasons: [
-              `Matches ${job.matchingSkillsCount} of your skills: ${job.matchingSkills.join(', ')}`,
-              `Job type (${job.jobType}) is compatible with your preferences`,
-              `Located in ${job.location}`
-            ]
-          }));
-        }
+      // Check if Cohere API key exists
+      if (!process.env.COHERE_API_KEY) {
+        throw new Error("COHERE_API_KEY not found in environment variables");
       }
+
+      // Create prompt for Cohere API
+      const prompt = `You are an AI job matcher. Find the top 3 job matches for this candidate based on their profile and the available job listings.
+                
+      Candidate Profile:
+      - Name: ${profile.name}
+      - Location: ${profile.location}
+      - Years of Experience: ${profile.yearsOfExperience}
+      - Skills: ${profile.skills.join(', ')}
+      - Preferred Job Type: ${profile.preferredJobType}
       
-      // Get full job details for each recommendation
-      const recommendationsWithDetails = await Promise.all(
-        recommendations.map(async (rec) => {
-          const job = await Job.findById(rec.id);
-          return {
-            ...rec,
-            jobDetails: job
-          };
-        })
+      Available Jobs:
+      ${JSON.stringify(jobsData)}
+      
+      Return ONLY a JSON array of the top 3 job matches with this format:
+      [
+        {
+          "id": "job_id",
+          "title": "job_title",
+          "company": "company_name",
+          "matchScore": 85,
+          "matchReasons": ["reason1", "reason2", "reason3"]
+        },
+        ...
+      ]
+      
+      The matchScore should be between 0-100 and represent how well the candidate matches the job requirements.
+      The matchReasons should include 2-3 specific reasons why this job is a good match for the candidate.
+      Return ONLY the JSON array with no additional text.`;
+      
+      // Call Cohere API
+      const response = await axios.post(
+        'https://api.cohere.ai/v1/generate',
+        {
+          model: 'command',
+          prompt: prompt,
+          max_tokens: 1024,
+          temperature: 0.3,
+          stop_sequences: [],
+          return_likelihoods: 'NONE'
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.COHERE_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }
       );
       
-      res.json(recommendationsWithDetails);
-    } catch (parseError) {
-      console.error('Failed to parse recommendations:', parseError);
+      console.log("Cohere API responded successfully!");
       
-      // Fallback: simple skill-based matching if AI parsing fails
-      const skillMatchJobs = jobsData
-        .map(job => {
-          const matchingSkills = job.skills.filter(skill => 
-            profile.skills.includes(skill)
-          );
-          return {
-            ...job,
-            matchingSkillsCount: matchingSkills.length,
-            matchingSkills
-          };
-        })
-        .sort((a, b) => b.matchingSkillsCount - a.matchingSkillsCount)
-        .slice(0, 3);
+      // Extract text from response
+      const generatedText = response.data.generations[0].text;
+      
+      // Try to parse JSON from response
+      try {
+        // Find the JSON array in the text (it might have text before or after)
+        const jsonMatch = generatedText.match(/\[\s*{[\s\S]*}\s*\]/);
+        const jsonStr = jsonMatch ? jsonMatch[0] : generatedText.trim();
         
-      const recommendations = skillMatchJobs.map((job, index) => ({
-        id: job.id,
-        title: job.title,
-        company: job.company,
-        matchScore: 85 - (index * 5),
-        matchReasons: [
-          `Matches ${job.matchingSkillsCount} of your skills: ${job.matchingSkills.join(', ')}`,
-          `Job type (${job.jobType}) is compatible with your preferences`,
-          `Located in ${job.location}`
-        ],
-        jobDetails: jobs.find(j => j._id.toString() === job.id)
-      }));
+        const recommendations = JSON.parse(jsonStr);
+        
+        // Get full job details for each recommendation
+        const recommendationsWithDetails = await Promise.all(
+          recommendations.map(async (rec) => {
+            const job = await Job.findById(rec.id);
+            if (!job) {
+              throw new Error(`Job with ID ${rec.id} not found`);
+            }
+            return {
+              ...rec,
+              jobDetails: job
+            };
+          })
+        );
+        
+        return res.json(recommendationsWithDetails);
+      } catch (parseError) {
+        console.error("Failed to parse recommendations JSON:", parseError);
+        console.log("Raw text:", generatedText);
+        throw new Error("Failed to parse AI response, using fallback algorithm");
+      }
+    } catch (aiError) {
+      console.log("Using skill-based matching fallback due to AI error:", aiError.message);
       
-      res.json(recommendations);
-    }
-  } catch (err) {
-    console.error('Recommendation error:', err);
-    
-    // If the AI service fails, use fallback algorithm
-    try {
-      const profile = await Profile.findOne({ user: req.user.id });
-      const jobs = await Job.find();
-      
-      // Simple matching algorithm based on skills and job type
+      // Fallback algorithm based on skill matching
       const matchedJobs = jobs
         .map(job => {
           // Calculate skill match percentage
@@ -237,15 +154,59 @@ exports.getJobRecommendations = async (req, res) => {
               jobTypeMatch 
                 ? `Job type (${job.jobType}) matches your preference`
                 : 'This opportunity offers a different work arrangement',
-              `Based in ${job.location}`
+              `Located in ${job.location}`
             ],
             jobDetails: job
           };
         })
         .sort((a, b) => b.matchScore - a.matchScore)
         .slice(0, 3);
-        
-      res.json(matchedJobs);
+      
+      // Add note about fallback for validation purposes
+      matchedJobs.forEach(job => {
+        job.usingFallback = true;
+      });
+      
+      return res.json(matchedJobs);
+    }
+  } catch (err) {
+    console.error('Recommendation error:', err);
+    
+    // Final fallback if everything else fails
+    try {
+      const profile = await Profile.findOne({ user: req.user.id });
+      const jobs = await Job.find();
+      
+      // Simple matching algorithm based on skills
+      const recommendations = jobs
+        .map(job => {
+          const matchingSkillCount = job.skills.filter(skill => 
+            profile.skills.includes(skill)
+          ).length;
+          
+          return {
+            job,
+            matchingSkillCount,
+            matchScore: Math.min(Math.round((matchingSkillCount / profile.skills.length) * 100), 99)
+          };
+        })
+        .sort((a, b) => b.matchingSkillCount - a.matchingSkillCount)
+        .slice(0, 3)
+        .map(match => ({
+          id: match.job._id,
+          title: match.job.title,
+          company: match.job.company,
+          matchScore: match.matchScore,
+          matchReasons: [
+            `Skill compatibility: ${match.matchingSkillCount} matching skills`,
+            `Job type: ${match.job.jobType} (${profile.preferredJobType === match.job.jobType ? 'matches' : 'differs from'} your preference)`,
+            `Location: ${match.job.location}`
+          ],
+          jobDetails: match.job,
+          usingFallback: true
+        }));
+      
+      res.json(recommendations);
     } catch (fallbackErr) {
       console.error('Fallback matching error:', fallbackErr);
       res.status(500).json({ msg: 'Server error', error: err.message });
